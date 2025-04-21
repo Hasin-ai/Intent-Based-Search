@@ -47,5 +47,6 @@ postgres_data/
 
 # Project specific files to exclude from git
 main2.py
+context.txt
 vector_search.html
 .ipynb_checkpoints/
