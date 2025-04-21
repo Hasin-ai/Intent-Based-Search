@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 ## 4. Configure Environment Variables
 
-1. Its preferred that you add your own Gemini API key, mine is still there:
+1. Its preferred that you add your own Gemini API key, mine is still there. Update `vector_search.py` with your gemini api, note that `gemini.py` is just an example file. Run this to test the Gemini API.
    ```ini
    GEMINI_API_KEY=your_gemini_api_key_here
    ```
