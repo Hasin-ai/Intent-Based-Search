@@ -1,11 +1,12 @@
-
 # Run this to test the Gemini API
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+import os
 
-GEMINI_API_KEY="AIzaSyBwQdR9m-xEm6wgaxPb5vCDwc3k3a_rZf8"
+load_dotenv()
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Generate embeddings for a single string
 result = client.models.embed_content(

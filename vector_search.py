@@ -7,15 +7,25 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from models import Product
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+# Load environment variables
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY is not set in environment variables")
+    raise ValueError("GEMINI_API_KEY is required")
+
+
 # Gemini API setup
-GEMINI_API_KEY = "AIzaSyBwQdR9m-xEm6wgaxPb5vCDwc3k3a_rZf8"
 genai.configure(api_key=GEMINI_API_KEY)
+
 
 # Initialize Qdrant client
 try:
@@ -25,6 +35,7 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Qdrant client: {str(e)}")
     raise
+
 
 # Variable to store the embedding dimension once we discover it
 VECTOR_DIM = None
