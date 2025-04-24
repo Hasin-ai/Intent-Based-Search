@@ -3,8 +3,7 @@ import traceback
 from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, desc, text
-from sqlalchemy.sql.expression import literal_column
+from sqlalchemy import func, desc
 from db import engine, Base, get_db
 from models import Product
 from typing import List
@@ -25,9 +24,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with your frontend URL
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=True,ers=["*"],
 )
 
 # Initialize vector search on startup

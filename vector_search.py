@@ -8,7 +8,8 @@ from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from models import Product
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-
+from google.genai import types
+from google import genai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -24,7 +25,13 @@ if not GEMINI_API_KEY:
 
 
 # Gemini API setup
-genai.configure(api_key=GEMINI_API_KEY)
+try:
+    logger.info("Initializing Gemini API client")
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    logger.info("Gemini API client initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Gemini API client: {str(e)}")
+    raise
 
 
 # Initialize Qdrant client
@@ -38,46 +45,44 @@ except Exception as e:
 
 
 # Variable to store the embedding dimension once we discover it
-VECTOR_DIM = None
+VECTOR_DIM = 768  # Default dimension for many models
 
 def generate_embedding(text):
     """Generate embeddings using Gemini API"""
     global VECTOR_DIM
-    
+
     try:
         logger.info(f"Generating embedding for: '{text[:30]}...'")
+
+        # Use the Gemini API client as per your prompt
         
-        # Generate embedding using Gemini embeddings API
-        embedding_result = genai.embed_content(
-            model="models/embedding-001",
-            content=text,
-            task_type="SEMANTIC_SIMILARITY"
+        result = client.models.embed_content(
+            model="text-embedding-004",
+            contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=VECTOR_DIM, 
+                                     task_type="SEMANTIC_SIMILARITY")
         )
-        
-        if embedding_result and hasattr(embedding_result, 'embedding'):
-            embedding = embedding_result.embedding
-        elif embedding_result and isinstance(embedding_result, dict) and 'embedding' in embedding_result:
-            embedding = embedding_result['embedding']
-        else:
-            logger.error(f"Unexpected embedding result format: {type(embedding_result)}")
-            raise ValueError("Failed to extract embedding from API response")
-        
+
+        # Extract embedding values
+        embedding = result.embeddings[0].values
+
         # Update the global VECTOR_DIM if not set yet
         if VECTOR_DIM is None:
             VECTOR_DIM = len(embedding)
             logger.info(f"Discovered embedding dimension: {VECTOR_DIM}")
-        
+
         # Ensure the dimension matches our expected dimension
         if len(embedding) != VECTOR_DIM:
             logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {VECTOR_DIM}")
-            
+
         logger.info(f"Successfully generated embedding with {len(embedding)} dimensions")
+        # print(embedding)
         return embedding
-            
+
     except Exception as e:
         logger.error(f"Error generating embedding: {str(e)}")
         logger.error(traceback.format_exc())
-        
+
         # Fall back to mock embedding if API fails
         logger.info("Falling back to mock embedding")
         return generate_mock_embedding(text)
