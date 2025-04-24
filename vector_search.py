@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from google.genai import types
 from google import genai
+import redis
+import hashlib
+import json
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -23,6 +27,103 @@ if not GEMINI_API_KEY:
     logger.error("GEMINI_API_KEY is not set in environment variables")
     raise ValueError("GEMINI_API_KEY is required")
 
+# Redis client setup
+redis_client = None
+def setup_redis():
+    """Initialize Redis client"""
+    global redis_client
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        logger.info(f"Initializing Redis client: {redis_url}")
+        redis_client = redis.from_url(redis_url)
+        redis_client.ping()  # Test connection
+        logger.info("Redis connection successful")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize Redis: {str(e)}")
+        redis_client = None
+        return False
+
+# Cache management functions
+def get_cache_key(query):
+    """Generate a cache key for embeddings based on query hash"""
+    query_hash = hashlib.md5(query.encode()).hexdigest()
+    return f"search:embedding:{query_hash}"
+
+def get_frequency_key():
+    """Key for the frequency sorted set"""
+    return "search:freq"
+
+def is_hot_query(query_hash):
+    """Check if a query is 'hot' (score >= 5)"""
+    global redis_client
+    if not redis_client:
+        return False
+        
+    try:
+        score = redis_client.zscore(get_frequency_key(), query_hash)
+        return score is not None and score >= 5
+    except Exception as e:
+        logger.warning(f"Error checking hot query: {str(e)}")
+        return False
+
+def increment_query_frequency(query_hash):
+    """Increment frequency counter for query"""
+    global redis_client
+    if not redis_client:
+        return
+        
+    try:
+        # Increment score in sorted set
+        redis_client.zincrby(get_frequency_key(), 1, query_hash)
+        # Ensure frequency data expires after 1 hour
+        redis_client.expire(get_frequency_key(), 3600)
+    except Exception as e:
+        logger.warning(f"Failed to increment query frequency: {str(e)}")
+
+def determine_ttl(query_hash):
+    """Determine TTL based on query frequency"""
+    if is_hot_query(query_hash):
+        logger.info(f"Hot query detected - using 1 hour TTL")
+        return 3600  # 1 hour for hot queries
+    else:
+        logger.info(f"Cold query - using 5 minute TTL")
+        return 300   # 5 minutes for cold queries
+
+def cache_embedding(query, embedding):
+    """Cache embedding with adaptive TTL"""
+    global redis_client
+    if not redis_client:
+        return
+        
+    try:
+        cache_key = get_cache_key(query)
+        query_hash = cache_key.split(":")[-1]
+        ttl = determine_ttl(query_hash)
+        
+        redis_client.setex(
+            cache_key, 
+            ttl, 
+            json.dumps(embedding)
+        )
+        logger.info(f"Cached embedding with TTL: {ttl}s")
+    except Exception as e:
+        logger.warning(f"Failed to cache embedding: {str(e)}")
+
+def refresh_cache_ttl(query):
+    """Refresh TTL for existing cache entry"""
+    global redis_client
+    if not redis_client:
+        return
+        
+    try:
+        cache_key = get_cache_key(query)
+        query_hash = cache_key.split(":")[-1]
+        ttl = determine_ttl(query_hash)
+        redis_client.expire(cache_key, ttl)
+        logger.info(f"Refreshed cache TTL to {ttl}s")
+    except Exception as e:
+        logger.warning(f"Failed to refresh cache TTL: {str(e)}")
 
 # Gemini API setup
 try:
@@ -48,14 +149,37 @@ except Exception as e:
 VECTOR_DIM = 768  # Default dimension for many models
 
 def generate_embedding(text):
-    """Generate embeddings using Gemini API"""
-    global VECTOR_DIM
+    """Generate embeddings using Gemini API with Redis caching"""
+    global VECTOR_DIM, redis_client
 
     try:
+        # Check cache if Redis is available
+        if redis_client:
+            start_time = time.time()
+            cache_key = get_cache_key(text)
+            query_hash = cache_key.split(":")[-1]
+            
+            logger.info(f"Checking cache for query: '{text[:30]}...'")
+            cached_data = redis_client.get(cache_key)
+            
+            if cached_data:
+                # Cache hit
+                logger.info(f"Cache HIT! Embedding retrieved in {time.time() - start_time:.2f}s")
+                embedding = json.loads(cached_data)
+                
+                # Update stats and refresh TTL
+                increment_query_frequency(query_hash)
+                refresh_cache_ttl(text)
+                
+                return embedding
+            
+            logger.info(f"Cache MISS. Generating new embedding.")
+        else:
+            logger.info("Redis not available, skipping cache check")
+
+        # Generate new embedding
         logger.info(f"Generating embedding for: '{text[:30]}...'")
 
-        # Use the Gemini API client as per your prompt
-        
         result = client.models.embed_content(
             model="text-embedding-004",
             contents=text,
@@ -76,7 +200,14 @@ def generate_embedding(text):
             logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {VECTOR_DIM}")
 
         logger.info(f"Successfully generated embedding with {len(embedding)} dimensions")
-        # print(embedding)
+        
+        # Cache the newly generated embedding
+        if redis_client:
+            cache_key = get_cache_key(text)
+            query_hash = cache_key.split(":")[-1]
+            cache_embedding(text, embedding)
+            increment_query_frequency(query_hash)
+
         return embedding
 
     except Exception as e:
@@ -212,7 +343,7 @@ def get_similar_product_ids(query, limit=10, offset=0):
             logger.info("Empty query, returning empty result")
             return []
             
-        # Generate embedding for query
+        # Generate embedding for query (now with Redis caching)
         logger.info("Generating embedding for query")
         query_vector = generate_embedding(query)
         

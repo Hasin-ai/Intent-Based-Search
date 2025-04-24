@@ -20,17 +20,19 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with your frontend URL
-    allow_credentials=True,ers=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize vector search on startup
 @app.on_event("startup")
 async def startup_event():
     vector_search.setup_collection()
+    vector_search.setup_redis()  # Initialize Redis connection
 
 # Database setup
 
@@ -199,14 +201,7 @@ async def integrated_search(
     offset: int = Query(0, description="Offset for pagination"),
     db: Session = Depends(get_db)
 ):
-    """
-    Integrated search that uses:
-    1. Vector search (Qdrant) to find similar products
-    2. PostgreSQL to fetch the complete product data
-    
-    Architecture flow:
-    User → FastAPI → Embedding Generation → Vector DB → PostgreSQL → Response
-    """
+    """Integrated search using both PostgreSQL and vector search"""
     try:
         # Return empty list for empty queries
         if not query.strip():
@@ -260,6 +255,38 @@ async def reindex_products(db: Session = Depends(get_db)):
         logger.error(f"Reindex error: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Reindexing error: {str(e)}")
+
+@app.get("/cache/stats")
+async def cache_statistics():
+    """Get statistics about the Redis cache"""
+    try:
+        if not vector_search.redis_client:
+            return {"status": "Redis not available"}
+            
+        # Get hot queries
+        freq_key = vector_search.get_frequency_key()
+        hot_queries = vector_search.redis_client.zrange(
+            freq_key, 0, -1, desc=True, withscores=True
+        )
+        
+        # Get memory info
+        memory_info = vector_search.redis_client.info("memory")
+        
+        # Format results
+        hot_query_data = [
+            {"query_hash": query.decode(), "score": score}
+            for query, score in hot_queries if score >= 5
+        ]
+        
+        return {
+            "status": "ok",
+            "hot_queries": hot_query_data,
+            "hot_query_count": len(hot_query_data),
+            "memory_used": memory_info.get("used_memory_human", "unknown"),
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
