@@ -9,6 +9,8 @@ from models import Product
 from typing import List
 from schemas import ProductModel, ProductResponse, ProductUpdate
 import vector_search
+import time
+from redis_cache import get_cache_statistics  # Changed from redis to redis_cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -32,7 +34,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     vector_search.setup_collection()
-    vector_search.setup_redis()  # Initialize Redis connection
+    from redis_cache import setup_redis  # Changed from redis to redis_cache
+    setup_redis()  # Initialize Redis connection
 
 # Database setup
 
@@ -259,34 +262,7 @@ async def reindex_products(db: Session = Depends(get_db)):
 @app.get("/cache/stats")
 async def cache_statistics():
     """Get statistics about the Redis cache"""
-    try:
-        if not vector_search.redis_client:
-            return {"status": "Redis not available"}
-            
-        # Get hot queries
-        freq_key = vector_search.get_frequency_key()
-        hot_queries = vector_search.redis_client.zrange(
-            freq_key, 0, -1, desc=True, withscores=True
-        )
-        
-        # Get memory info
-        memory_info = vector_search.redis_client.info("memory")
-        
-        # Format results
-        hot_query_data = [
-            {"query_hash": query.decode(), "score": score}
-            for query, score in hot_queries if score >= 5
-        ]
-        
-        return {
-            "status": "ok",
-            "hot_queries": hot_query_data,
-            "hot_query_count": len(hot_query_data),
-            "memory_used": memory_info.get("used_memory_human", "unknown"),
-            "timestamp": time.time()
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    return get_cache_statistics()
 
 if __name__ == "__main__":
     import uvicorn
