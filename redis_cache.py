@@ -1,9 +1,10 @@
-import redis as redis_lib  # to avoid self-import conflict
+import redis   
 import hashlib
 import logging
 import json
 import time
 import os
+import traceback  # Import traceback for debugging
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -11,20 +12,23 @@ logger = logging.getLogger(__name__)
 # Redis client setup
 redis_client = None
 
+
 def setup_redis():
-    """Initialize Redis client"""
     global redis_client
     try:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        logger.info(f"Initializing Redis client: {redis_url}")
-        redis_client = redis_lib.from_url(redis_url)  # Use redis_lib instead
-        redis_client.ping()  # Test connection
-        logger.info("Redis connection successful")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to initialize Redis: {str(e)}")
+        logger.info(f"Attempting to connect to Redis at {redis_url}")
+        redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        redis_client.ping()
+        logger.info("Successfully connected to Redis")
+    except redis.ConnectionError as e:
+        logger.error(f"Redis connection error: {e}")
         redis_client = None
-        return False
+
+def get_redis_client():
+    """Return the current Redis client instance"""
+    global redis_client
+    return redis_client
 
 # Cache management functions
 def get_cache_key(query):
@@ -67,30 +71,39 @@ def determine_ttl(query_hash):
     """Determine TTL based on query frequency"""
     if is_hot_query(query_hash):
         logger.info(f"Hot query detected - using 1 hour TTL")
-        return 600  # for hot queries
+        return 3600  # 1 hour for hot queries (increased from 600s)
     else:
         logger.info(f"Cold query - using 5 minute TTL")
-        return 60   # for cold queries
+        return 300   # 5 minutes for cold queries (increased from 60s)
 
-def cache_embedding(query, embedding):
+def cache_embedding(query, embedding, explicit_ttl=None):
     """Cache embedding with adaptive TTL"""
     global redis_client
     if not redis_client:
+        logger.warning("Redis client not available, skipping cache")
         return
         
     try:
         cache_key = get_cache_key(query)
         query_hash = cache_key.split(":")[-1]
-        ttl = determine_ttl(query_hash)
         
+        # Use explicit TTL if provided, otherwise calculate it
+        ttl = explicit_ttl if explicit_ttl is not None else determine_ttl(query_hash)
+        
+        # Convert embedding to JSON string
+        embedding_json = json.dumps(embedding)
+        logger.info(f"Caching embedding with key: {cache_key}, size: {len(embedding_json)} bytes")
+        
+        # Store in Redis with TTL
         redis_client.setex(
             cache_key, 
             ttl, 
-            json.dumps(embedding)
+            embedding_json
         )
-        logger.info(f"Cached embedding with TTL: {ttl}s")
+        logger.info(f"Successfully cached embedding with TTL: {ttl}s")
     except Exception as e:
-        logger.warning(f"Failed to cache embedding: {str(e)}")
+        logger.error(f"Failed to cache embedding: {str(e)}")
+        logger.error(traceback.format_exc())
 
 def refresh_cache_ttl(query):
     """Refresh TTL for existing cache entry"""
@@ -116,10 +129,18 @@ def get_cached_embedding(query):
     try:
         start_time = time.time()
         cache_key = get_cache_key(query)
+        # logger.debug(f"Cache key: {cache_key}")
         query_hash = cache_key.split(":")[-1]
+        # logger.debug(f"Query hash: {query_hash}")
         
         logger.info(f"Checking cache for query: '{query[:30]}...'")
         cached_data = redis_client.get(cache_key)
+        # log first 30 characters of cached data for debugging
+        if cached_data:
+            logger.info(f"Cached data (first 30 chars): {cached_data[:30]}")
+        else:   
+            logger.info("No cached data found")
+        # logger.info(cached_data)
         
         if cached_data:
             # Cache hit
@@ -154,9 +175,9 @@ def get_cache_statistics():
         # Get memory info
         memory_info = redis_client.info("memory")
         
-        # Format results
+        # Format results - remove .decode() since strings are already decoded
         hot_query_data = [
-            {"query_hash": query.decode(), "score": score}
+            {"query_hash": query, "score": score}
             for query, score in hot_queries if score >= 5
         ]
         

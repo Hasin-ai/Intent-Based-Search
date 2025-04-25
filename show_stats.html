@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cache Stats</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --secondary: #10b981;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --surface-1: rgba(30, 41, 59, 0.7);
+      --surface-2: rgba(30, 41, 59, 0.4);
+      --card-bg: rgba(15, 23, 42, 0.6);
+      --border: rgba(148, 163, 184, 0.15);
+      --error: #ef4444;
+      --error-bg: rgba(239, 68, 68, 0.1);
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.5;
+      margin: 0;
+      overflow-x: hidden;
+      position: relative;
+    }
+    .bg-gradient {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background: 
+        radial-gradient(circle at 10% 20%, rgba(100, 108, 255, 0.3) 0%, rgba(20, 20, 40, 0) 25%),
+        radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.2) 0%, rgba(20, 20, 40, 0) 25%),
+        radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%);
+    }
+    .noise {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 24px;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.18), 0 10px 10px -5px rgba(0,0,0,0.10);
+      padding: 2.2rem 2rem 2rem 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .glass-highlight {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.13), transparent);
+    }
+    .header {
+      margin-bottom: 2rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(125deg, var(--primary), var(--secondary) 85%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 0 0 12px 0;
+      letter-spacing: -1.5px;
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+    }
+    .feature-pill {
+      display: inline-block;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      font-size: 0.77rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.3em 1em;
+      margin-left: 0.6rem;
+      vertical-align: middle;
+    }
+    .graph-area {
+      min-height: 390px;
+      margin-bottom: 2rem;
+    }
+    .bar-list {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      list-style: none;
+      width: 100%;
+    }
+    .bar-row {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: filter 0.2s;
+      gap: 0.5rem;
+    }
+    .bar-row:hover { filter: brightness(1.13); }
+    
+    .row-content {
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .query-label {
+      font-family: 'Fira Mono', 'Menlo', 'Consolas', monospace;
+      color: var(--primary);
+      font-size: 0.97rem;
+      width: 100%;
+      user-select: text;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 0.3rem;
+    }
+    
+    .hash-label {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      background: rgba(99,102,241,0.07);
+      border-radius: 6px;
+      padding: 0.23em 0.85em;
+      margin-right: 1rem;
+      cursor: pointer;
+    }
+    
+    .bar-bar {
+      background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 120%);
+      color: #fff;
+      height: 27px;
+      border-radius: 9px;
+      min-width: 20px;
+      display: flex;
+      align-items: center;
+      position: relative;
+      transition: width 0.45s cubic-bezier(0.63,0.04,0.33,1.02);
+      box-shadow: 0 2px 8px 0 rgba(99,102,241,0.05);
+      overflow: hidden;
+    }
+    .bar-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      padding: 0 18px 0 10px;
+      color: #fff;
+      text-shadow: 0 1px 0 rgba(99,102,241,0.08);
+      z-index: 2;
+      position: relative;
+    }
+    .bar-bar:after {
+      content: '';
+      position: absolute;
+      left:0;top:0;right:0;bottom:0;
+      opacity: 0.06;
+      background: repeating-linear-gradient(120deg, #fff, #fff 6px, transparent 8px, transparent 14px);
+      border-radius: 9px;
+      pointer-events:none;
+    }
+    .bar-row[data-tooltip]:hover:after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 35%; top:100%;
+      background: var(--surface-1);
+      color: var(--text-primary);
+      font-size: 0.85rem;
+      border-radius: 8px;
+      padding: 0.35em 1em;
+      white-space: pre;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 12px 0 rgba(15,23,42,0.16);
+      pointer-events: none;
+      opacity: 1;
+      z-index: 10;
+      min-width:200px;
+    }
+    .footer-note {
+      color: var(--text-secondary);
+      font-size: 0.94rem;
+      opacity: 0.7;
+      text-align: left;
+      margin-top:2rem;
+    }
+    .loading, .error, .empty {
+      text-align: center;
+      color: var(--text-secondary);
+      padding: 3rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.3rem;
+      min-height: 80px;
+      font-size: 1.07rem;
+      width: 100%;
+    }
+    .loading-spinner {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: conic-gradient(var(--primary) 0%, transparent 60%);
+      animation: spin 1s linear infinite, pulse 2s ease-in-out infinite;
+      position: relative;
+    }
+    .loading-spinner::before {
+      content: '';
+      position: absolute;
+      inset: 5px;
+      border-radius: 50%;
+      background: var(--card-bg);
+    }
+    @keyframes spin { 0% {transform: rotate(0);} 100%{transform: rotate(360deg);} }
+    @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1.0;} 100% { opacity: 0.6; } }
+    @media (max-width: 680px){
+      .container { padding:1.1rem 0.2rem;}
+      .card { padding: 1rem 0.5rem 1.2rem 0.5rem;}
+      .header h1 { font-size: 1.2rem;}
+      .bar-label { min-width: 50px; font-size: 0.78rem;}
+      .bar-bar { height:20px;}
+      .bar-row[data-tooltip]:hover:after { left:10%; top:120%; min-width:100px; font-size:0.73rem;}
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-gradient"></div>
+  <div class="noise"></div>
+  <div class="container">
+    <div class="card">
+      <div class="glass-highlight"></div>
+      <div class="header">
+        <h1>
+          Cache Hot Query Stats
+          <span class="feature-pill">Live</span>
+        </h1>
+        <div class="meta-row">
+          <span id="cache-meta-memory">Memory used: <b>...</b></span>
+          <span id="cache-meta-count">Hot queries: <b>...</b></span>
+          <span id="cache-meta-time">Updated: <b>...</b></span>
+        </div>
+      </div>
+      <div class="graph-area" id="graphArea">
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <span>Loading cache stats...</span>
+        </div>
+      </div>
+      <div class="footer-note">
+        The above shows the most frequent queries by hash. Top 50 displayed. Click hash to copy.
+      </div>
+    </div>
+  </div>
+  <script>
+    const MAX_BARS = 50;
+    const statsUrl = "http://localhost:8000/cache/stats";
+    const graphArea = document.getElementById("graphArea");
+    function shortHash(hash, len=10) {
+      return hash.slice(0, len);
+    }
+    function secondsAgo(ts) {
+      let diff = Math.floor(Date.now()/1000 - ts);
+      if (diff < 4) return "just now";
+      if (diff < 60) return diff + "s ago";
+      if (diff < 3600) return Math.floor(diff/60) + "m ago";
+      if (diff < 86400) return Math.floor(diff/3600) + "h ago";
+      return new Date(ts*1000).toLocaleString();
+    }
+    async function loadStats(){
+      try {
+        const res = await fetch(statsUrl, {cache:"no-store"});
+        if(!res.ok) throw new Error(res.status + " " + res.statusText);
+        const stat = await res.json();
+        document.getElementById("cache-meta-memory").innerHTML = "Memory used: <b>"+stat.memory_used+"</b>";
+        document.getElementById("cache-meta-count").innerHTML = "Hot queries: <b>"+stat.hot_query_count+"</b>";
+        document.getElementById("cache-meta-time").innerHTML = "Updated: <b>"+secondsAgo(stat.timestamp)+"</b>";
+        let arr = stat.hot_queries.slice().sort((a, b) => b.score - a.score);
+
+        if(arr.length > MAX_BARS) arr = arr.slice(0, MAX_BARS);
+
+        // If no queries
+        if(arr.length === 0) {
+          graphArea.innerHTML = `<div class="empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <line x1="11" y1="8" x2="11" y2="14"></line>
+              <line x1="8" y1="11" x2="14" y2="11"></line>
+            </svg>
+            <span>No hot queries found in cache.</span>
+          </div>`;
+          return;
+        }
+
+        // Compute max score for scaling bars
+        const maxScore = Math.max(...arr.map(item=>item.score), 1);
+
+        // Bar list
+        graphArea.innerHTML = `<ul class="bar-list">
+          ${arr.map(item => {
+            // Calculate exact percentage based on max score (100% = max score)
+            const pct = (item.score / maxScore) * 100;
+            return `
+              <div class="query-label">Query: ${item.query_hash || '(no query)'}</div>
+              <div class="row-content">
+                
+                <div class="bar-bar" style="width:${pct}%;">
+                  <span class="bar-value">${item.score}</span>
+                </div>
+              </div>
+            </li>`;
+          }).join("")}
+        </ul>`;
+      } catch(e){
+        graphArea.innerHTML = `<div class="error">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <circle cx="12" cy="16" r="1"></circle>
+          </svg>
+          Failed to load stats: ${e.message.replace(/</g,"&lt;")}
+        </div>`;
+      }
+    }
+
+    // Initial load
+    loadStats();
+
+    // Regular refresh every 12s
+    setInterval(loadStats, 12000);
+  </script>
+</body>
+</html>

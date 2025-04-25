@@ -11,9 +11,10 @@ from dotenv import load_dotenv
 from google.genai import types
 from google import genai
 # Import Redis functions from our redis module
-from redis_cache import (  # Changed from redis to redis_cache
-    setup_redis, get_cached_embedding, cache_embedding, 
-    increment_query_frequency, get_cache_key, redis_client
+from redis_cache import (
+    setup_redis, get_cached_embedding, cache_embedding,
+    increment_query_frequency, get_cache_key, get_redis_client,
+    get_frequency_key, determine_ttl
 )
 
 # Configure logging
@@ -83,10 +84,28 @@ def generate_embedding(text):
         logger.info(f"Successfully generated embedding with {len(embedding)} dimensions")
         
         # Cache the newly generated embedding
-        if redis_client:
+        if get_redis_client():
+            redis_client = get_redis_client()
+            logger.info("Caching embedding in Redis")
             query_hash = get_cache_key(text).split(":")[-1]
-            cache_embedding(text, embedding)
-            increment_query_frequency(query_hash)
+            logger.info(f"Caching embedding for query hash: {query_hash}")
+            
+            # Get the current frequency FIRST, then increment it
+            current_freq = redis_client.zscore(get_frequency_key(), query_hash) or 0
+            new_freq = current_freq + 1
+            
+            # Explicitly increment to the new frequency
+            redis_client.zadd(get_frequency_key(), {query_hash: new_freq})
+            redis_client.expire(get_frequency_key(), 3600)  # Set expiry
+            
+            # Determine TTL based on the NEW frequency we just set
+            ttl = 3600 if new_freq >= 5 else 300
+            
+            # Cache with the correct TTL
+            cache_embedding(text, embedding, ttl)  # Pass TTL directly
+            logger.info(f"Cached embedding with TTL {ttl}s")
+        else:
+            logger.warning("Redis client not available, skipping cache")
 
         return embedding
 

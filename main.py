@@ -10,7 +10,7 @@ from typing import List
 from schemas import ProductModel, ProductResponse, ProductUpdate
 import vector_search
 import time
-from redis_cache import get_cache_statistics  # Changed from redis to redis_cache
+from redis_cache import get_cache_statistics 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -30,12 +30,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import redis_cache
+redis_cache.setup_redis()  # Initialize Redis immediately
+
 # Initialize vector search on startup
 @app.on_event("startup")
 async def startup_event():
     vector_search.setup_collection()
-    from redis_cache import setup_redis  # Changed from redis to redis_cache
-    setup_redis()  # Initialize Redis connection
 
 # Database setup
 
@@ -142,60 +143,19 @@ async def search_products(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/products/vector-search/", response_model=List[ProductResponse])
-async def search_products_vector(
-    query: str = Query(..., description="Search query"),
-    limit: int = Query(10, description="Maximum number of results to return"),
-    offset: int = Query(0, description="Offset for pagination")
-):
-    logger.info(f"Vector search request received: query='{query}', limit={limit}, offset={offset}")
+@app.delete("/products/{product_id}")
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
     try:
-        # First check if we need to set up the collection
-        collection_setup_ok = vector_search.setup_collection()
-        if not collection_setup_ok:
-            logger.error("Collection setup failed")
-            raise HTTPException(status_code=500, detail="Failed to set up vector search collection")
+        db_product = db.query(Product).filter(Product.id == product_id).first()
+        if db_product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
         
-        # Try to get similar products
-        logger.info("Retrieving similar product IDs")
-        similar_product_ids = vector_search.get_similar_product_ids(query, limit, offset)
-        
-        # Check if we got any results
-        if not similar_product_ids:
-            logger.info("No similar products found")
-            return []
-        
-        # Extract IDs
-        product_ids = [item["id"] for item in similar_product_ids]
-        logger.info(f"Found similar product IDs: {product_ids}")
-        
-        # Get product data from database
-        db = next(get_db())
-        products = db.query(Product).filter(Product.id.in_(product_ids)).all()
-        logger.info(f"Retrieved {len(products)} products from database")
-        
-        # Map scores to products
-        id_to_score = {item["id"]: item["score"] for item in similar_product_ids}
-        result = []
-        
-        for product in products:
-            product_dict = {
-                "id": product.id,
-                "name": product.name,
-                "description": product.description,
-                "score": id_to_score.get(product.id, 0)
-            }
-            result.append(product_dict)
-        
-        # Sort by score (highest first)
-        result.sort(key=lambda x: x["score"], reverse=True)
-        logger.info(f"Returning {len(result)} products")
-        
-        return result
+        db.delete(db_product)
+        db.commit()
+        return {"message": "Product deleted successfully"}
     except Exception as e:
-        logger.error(f"Error in vector search: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Vector search error: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/products/integrated-search/", response_model=List[ProductResponse])
 async def integrated_search(
@@ -263,6 +223,36 @@ async def reindex_products(db: Session = Depends(get_db)):
 async def cache_statistics():
     """Get statistics about the Redis cache"""
     return get_cache_statistics()
+
+@app.get("/cache/test")
+async def test_redis_connection():
+    """Test Redis connection and caching"""
+    try:
+        from redis_cache import redis_client
+        
+        # Ensure Redis is connected
+        if not redis_client:
+            return {"status": "error", "message": "Could not connect to Redis"}
+            
+        # Try a simple Redis operation
+        test_key = "test:connection"
+        test_value = f"Connection test at {time.time()}"
+        redis_client.set(test_key, test_value)
+        read_back = redis_client.get(test_key)
+        
+        # Check Redis info
+        info = redis_client.info()
+        
+        return {
+            "status": "success",
+            "connection": "established",
+            "write_test": "success",
+            "read_test": read_back if read_back else None,
+            "redis_version": info.get("redis_version", "unknown"),
+            "clients_connected": info.get("connected_clients", "unknown")
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e), "traceback": traceback.format_exc()}
 
 if __name__ == "__main__":
     import uvicorn
