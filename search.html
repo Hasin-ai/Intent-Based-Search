@@ -502,8 +502,11 @@
           if (products.length) {
             realtimeResults.innerHTML = products.map(product => `
               <div class="product-card">
-                <h3>${product.name}</h3>
-                <p>${product.description}</p>
+                <h3>${product.title}</h3>
+                ${product.brand ? `<p><strong>Brand:</strong> ${product.brand}</p>` : ''}
+                ${product.category ? `<p><strong>Category:</strong> ${product.category}</p>` : ''}
+                ${product.description ? `<p>${product.description}</p>` : ''}
+                ${product.price ? `<p><strong>Price:</strong> $${product.price}</p>` : ''}
                 <small>ID: ${product.id}</small>
               </div>
             `).join('');
@@ -553,8 +556,11 @@
             const scorePercentage = Math.round(item.score * 100);
             return `
               <div class="product-card">
-                <h3>${item.name}</h3>
-                <p>${item.description}</p>
+                <h3>${item.title}</h3>
+                ${item.brand ? `<p><strong>Brand:</strong> ${item.brand}</p>` : ''}
+                ${item.category ? `<p><strong>Category:</strong> ${item.category}</p>` : ''}
+                ${item.description ? `<p>${item.description}</p>` : ''}
+                ${item.price ? `<p><strong>Price:</strong> $${item.price}</p>` : ''}
                 <div class="score">
                   Match: ${scorePercentage}%
                   <div class="score-bar">

@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from google.genai import types
 from google import genai
-# Import Redis functions from our redis module
+# Redis
 from redis_cache import (
-    setup_redis, get_cached_embedding, cache_embedding,
-    increment_query_frequency, get_cache_key, get_redis_client,
-    get_frequency_key, determine_ttl
+    get_cached_embedding, cache_embedding,
+    get_cache_key, get_redis_client,
+    get_frequency_key
 )
 
-# Configure logging
+# logging
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -186,8 +186,8 @@ def index_product(product):
     try:
         logger.info(f"Indexing product ID: {product.id}")
         
-        # Generate embedding
-        content = f"{product.name} {product.description}"
+        # Generate embedding using all relevant fields
+        content = f"{product.category or ''} {product.brand or ''} {product.title or ''} {product.description or ''} {str(product.price) if product.price else ''}"
         embedding = generate_embedding(content)
         
         # Create point for Qdrant

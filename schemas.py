@@ -1,15 +1,21 @@
-from pydantic import BaseModel, constr
-from typing import Optional
+from pydantic import BaseModel, constr, Field
+from typing import Optional, Dict, Any
 
 class ProductBase(BaseModel):
     """Base class for Product schemas"""
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow both casing versions
 
 class ProductModel(ProductBase):
     """Schema for creating and displaying products"""
-    name: constr(min_length=1, max_length=100)
-    description: constr(min_length=1)
+    category: Optional[str] = None
+    cluster_id: Optional[int] = None
+    brand: Optional[str] = None
+    title: constr(min_length=1, max_length=500)
+    description: Optional[str] = None
+    price: Optional[float] = None
+    specTableContent: Optional[Dict[str, Any]] = Field(default=None, alias="spectablecontent")
 
 class ProductResponse(ProductModel):
     """Schema for returning products with ID"""
@@ -18,5 +24,10 @@ class ProductResponse(ProductModel):
 
 class ProductUpdate(ProductBase):
     """Schema for updating products"""
-    name: Optional[constr(min_length=1, max_length=100)] = None
-    description: Optional[constr(min_length=1)] = None
+    category: Optional[str] = None
+    cluster_id: Optional[int] = None
+    brand: Optional[str] = None
+    title: Optional[constr(min_length=1, max_length=500)] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    specTableContent: Optional[Dict[str, Any]] = Field(default=None, alias="spectablecontent")

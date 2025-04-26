@@ -49,5 +49,6 @@ postgres_data/
 main2.py
 context.txt
 vector_search.html
+new_folder/
 .env
 .ipynb_checkpoints/

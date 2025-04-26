@@ -48,8 +48,13 @@ async def create_product(
 ):
     try:
         db_product = Product(
-            name=product.name,
-            description=product.description
+            category=product.category,
+            cluster_id=product.cluster_id,
+            brand=product.brand,
+            title=product.title,
+            description=product.description,
+            price=product.price,
+            spectablecontent=product.specTableContent  # Changed to match the column name
         )
         db.add(db_product)
         db.commit()
@@ -80,28 +85,6 @@ async def get_product(product_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/products/{product_id}", response_model=ProductResponse)
-async def update_product(
-    product_id: int,
-    product: ProductUpdate,
-    db: Session = Depends(get_db)
-):
-    try:
-        db_product = db.query(Product).filter(Product.id == product_id).first()
-        if db_product is None:
-            raise HTTPException(status_code=404, detail="Product not found")
-        
-        update_data = product.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_product, key, value)
-            
-        db.commit()
-        db.refresh(db_product)
-        return db_product
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/products/search/", response_model=List[ProductResponse])
 async def search_products(
     query: str = Query(..., description="Search query"),
@@ -114,11 +97,13 @@ async def search_products(
         if not query.strip():
             return []
         
-        # Create a PostgreSQL tsvector from name and description with different weights
-        # Weight A (4.0) for name and weight B (0.4) for description
+        # Create a PostgreSQL tsvector from all relevant text fields with different weights
+        # Weight A (4.0) for title and brand, Weight B (0.4) for description and category
         search_vector = func.to_tsvector('english', 
             func.concat_ws(' ', 
-                Product.name, 
+                Product.title,
+                Product.brand,
+                Product.category,
                 Product.description
             )
         )
@@ -141,6 +126,33 @@ async def search_products(
         
         return products
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/products/{product_id}", response_model=ProductResponse)
+async def update_product(
+    product_id: int,
+    product: ProductUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    try:
+        db_product = db.query(Product).filter(Product.id == product_id).first()
+        if db_product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        update_data = product.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_product, key, value)
+            
+        db.commit()
+        db.refresh(db_product)
+        
+        # Reindex the updated product
+        background_tasks.add_task(vector_search.index_product, db_product)
+        
+        return db_product
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/products/{product_id}")
@@ -196,8 +208,13 @@ async def integrated_search(
                 # Add as a dictionary so we can include the score
                 product_dict = {
                     "id": product.id,
-                    "name": product.name,
+                    "category": product.category,
+                    "cluster_id": product.cluster_id,
+                    "brand": product.brand,
+                    "title": product.title,
                     "description": product.description,
+                    "price": product.price,
+                    "specTableContent": product.spectablecontent,
                     "score": item["score"]  # Include relevance score
                 }
                 results.append(product_dict)
