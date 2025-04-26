@@ -507,7 +507,23 @@
                 ${product.category ? `<p><strong>Category:</strong> ${product.category}</p>` : ''}
                 ${product.description ? `<p>${product.description}</p>` : ''}
                 ${product.price ? `<p><strong>Price:</strong> $${product.price}</p>` : ''}
+                <div class="specs">
+                  <p><strong>Specifications:</strong></p>
+                  <ul>
+                    ${product.spectablecontent ? Object.entries(product.spectablecontent).map(([key, value]) => 
+                      `<li><strong>${key}:</strong> ${value}</li>`
+                    ).join('') : ''}
+                  </ul>
+                </div>
                 <small>ID: ${product.id}</small>
+                ${typeof product.score !== 'undefined' ? `
+                  <div class="score">
+                    Match: ${Math.round(product.score * 100)}%
+                    <div class="score-bar">
+                      <div class="score-fill" style="width: ${Math.round(product.score * 100)}%"></div>
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             `).join('');
           } else {
@@ -561,6 +577,14 @@
                 ${item.category ? `<p><strong>Category:</strong> ${item.category}</p>` : ''}
                 ${item.description ? `<p>${item.description}</p>` : ''}
                 ${item.price ? `<p><strong>Price:</strong> $${item.price}</p>` : ''}
+                <div class="specs">
+                  <p><strong>Specifications:</strong></p>
+                  <ul>
+                    ${item.spectablecontent ? Object.entries(item.spectablecontent).map(([key, value]) => 
+                      `<li><strong>${key}:</strong> ${value}</li>`
+                    ).join('') : ''}
+                  </ul>
+                </div>
                 <div class="score">
                   Match: ${scorePercentage}%
                   <div class="score-bar">

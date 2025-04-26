@@ -47,32 +47,85 @@ except Exception as e:
     raise
 
 # Variable to store the embedding dimension once we discover it
-VECTOR_DIM = 768  # Default dimension for many models
+VECTOR_DIM = 384  # Lock this to 384 to match the local model output
+
+def generate_embedding_from_transformers(text):
+    """Generate embeddings using local transformer model"""
+    try:
+        # Assuming the transformer model and tokenizer are globally available
+        # (This would require importing and setting up the model at the top of your script)
+        from transformers import AutoModel, AutoTokenizer
+        import torch
+        
+        # Load model and tokenizer from local path if not already loaded
+        model_path = "/home/fahim/Downloads/bge-fine-tuned-wdc-products-20250426T075427Z-001/bge-fine-tuned-wdc-products"
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModel.from_pretrained(model_path)
+        
+        # Tokenize input text
+        encoded_input = tokenizer([text], padding=True, truncation=True, return_tensors="pt")
+        
+        # Get model output
+        with torch.no_grad():
+            model_output = model(**encoded_input)
+        
+        # Perform mean pooling
+        token_embeddings = model_output.last_hidden_state
+        attention_mask = encoded_input['attention_mask']
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        mean_pooled = sum_embeddings / sum_mask
+        
+        # Convert embeddings to list for storage
+        embedding = mean_pooled[0].numpy().tolist()
+        
+        # Ensure embedding is exactly 384 dimensions
+        global VECTOR_DIM
+        if len(embedding) != VECTOR_DIM:
+            logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, forcing to {VECTOR_DIM}")
+            if len(embedding) > VECTOR_DIM:
+                # Truncate if longer than needed
+                embedding = embedding[:VECTOR_DIM]
+            else:
+                # Pad with zeros if shorter than needed (unlikely in this case)
+                embedding = embedding + [0.0] * (VECTOR_DIM - len(embedding))
+        
+        logger.info(f"Successfully generated local embedding with {len(embedding)} dimensions")
+        return embedding
+        
+    except Exception as e:
+        logger.error(f"Error generating local embedding: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
 def generate_embedding(text):
-    """Generate embeddings using Gemini API with Redis caching"""
+    """Generate embeddings with Redis caching using local transformer model"""
     global VECTOR_DIM
-
+    # Ensure VECTOR_DIM is always 384
+    VECTOR_DIM = 384
+    
     try:
         # Check cache if Redis is available
         cached_embedding = get_cached_embedding(text)
         if cached_embedding:
+            # Verify dimensions of cached embedding
+            if len(cached_embedding) != VECTOR_DIM:
+                logger.warning(f"Cached embedding has incorrect dimension: {len(cached_embedding)}, expected {VECTOR_DIM}")
+                # Force to correct dimension
+                if len(cached_embedding) > VECTOR_DIM:
+                    cached_embedding = cached_embedding[:VECTOR_DIM]
+                else:
+                    cached_embedding = cached_embedding + [0.0] * (VECTOR_DIM - len(cached_embedding))
             return cached_embedding
         
-        # Generate new embedding
+        # Generate new embedding using local transformer model
         logger.info(f"Generating embedding for: '{text[:30]}...'")
+        
+        # Use local transformer model instead of Gemini API
+        embedding = generate_embedding_from_transformers(text)
 
-        result = client.models.embed_content(
-            model="text-embedding-004",
-            contents=text,
-            config=types.EmbedContentConfig(output_dimensionality=VECTOR_DIM, 
-                                     task_type="SEMANTIC_SIMILARITY")
-        )
-
-        # Extract embedding values
-        embedding = result.embeddings[0].values
-
-        # Update the global VECTOR_DIM if not set yet
+        # Update the global VECTOR_DIM if not yet set
         if VECTOR_DIM is None:
             VECTOR_DIM = len(embedding)
             logger.info(f"Discovered embedding dimension: {VECTOR_DIM}")
@@ -80,8 +133,6 @@ def generate_embedding(text):
         # Ensure the dimension matches our expected dimension
         if len(embedding) != VECTOR_DIM:
             logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {VECTOR_DIM}")
-
-        logger.info(f"Successfully generated embedding with {len(embedding)} dimensions")
         
         # Cache the newly generated embedding
         if get_redis_client():
@@ -123,7 +174,7 @@ def generate_mock_embedding(text):
         # If VECTOR_DIM is not set yet, use a default size
         global VECTOR_DIM
         if VECTOR_DIM is None:
-            VECTOR_DIM = 768  # Default for many embedding models
+            VECTOR_DIM = 384  # Updated default based on local model
             logger.info(f"Using default embedding dimension: {VECTOR_DIM}")
         
         text_hash = hash(text) % 10000
@@ -139,16 +190,11 @@ def generate_mock_embedding(text):
 def setup_collection():
     """Set up Qdrant collection with the correct dimensions"""
     global VECTOR_DIM
+    # Always enforce 384 dimensions
+    VECTOR_DIM = 384
     
     try:
         logger.info("Setting up Qdrant collection")
-        
-        # Generate a test embedding to determine dimensions if not known yet
-        if VECTOR_DIM is None:
-            logger.info("Generating test embedding to determine dimensions")
-            test_embedding = generate_embedding("test query")
-            VECTOR_DIM = len(test_embedding)
-            logger.info(f"Determined vector dimension: {VECTOR_DIM}")
         
         # If collection exists, check if dimensions match
         if qdrant.collection_exists("products"):
