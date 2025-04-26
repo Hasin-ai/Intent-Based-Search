@@ -203,9 +203,10 @@ async def integrated_search(
         for item in similar_products:
             product_id = item["id"]
             if product_id in products_map:
-                # Attach score to product model
                 product = products_map[product_id]
-                # Add as a dictionary so we can include the score
+                # Skip products with missing or invalid title
+                if not product.title or not isinstance(product.title, str):
+                    continue
                 product_dict = {
                     "id": product.id,
                     "category": product.category,
@@ -215,7 +216,7 @@ async def integrated_search(
                     "description": product.description,
                     "price": product.price,
                     "specTableContent": product.spectablecontent,
-                    "score": item["score"]  # Include relevance score
+                    "score": item["score"]
                 }
                 results.append(product_dict)
         
