@@ -6,8 +6,9 @@ This document outlines the steps to get the project up and running locally.
 
 - Python
 - PostgreSQL server installed and running
+- A local Embedding generation model(We used )
+- Redis 
 - Git
-- [Gemini API key](https://developers.gemini.com/) 
 
 ## 1. Create and Activate Virtual Environment
 
@@ -33,16 +34,21 @@ pip install -r requirements.txt
 
 ## 3. Setup PostgreSQL Database
 
-1. Update the `db.py` file with your database connection details, for example:
-   ```python
-   DATABASE_URL = "postgresql://username:password@localhost:5432/your_database_name"
-   ```
+## 4. Setup Redis
+
+## 5. Setup local transformer model(We used: [BAII/bge-small-en] https://huggingface.co/BAAI/bge-small-en)
 
 ## 4. Configure Environment Variables
 
-1. Its preferred that you add your own Gemini API key, mine is still there. Update `vector_search.py` with your gemini api, note that `gemini.py` is just an example file. Run this to test the Gemini API.
+1. Update .env file with the following.
    ```ini
-   GEMINI_API_KEY=your_gemini_api_key_here
+
+      # Example .env file for the project
+
+      DATABASE_URL = "postgresql://"
+      REDIS_URL = "redis://"
+      MODEL_PATH = "/home/user/Downloads/bge-fine-tuned-wdc-products-20250426T075427Z-001/bge-fine-tuned-wdc-products"
+
    ```
 
 ## 5. Run the Application

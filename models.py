@@ -11,4 +11,4 @@ class Product(Base):
     title = Column(String(500), nullable=False)
     description = Column(Text)
     price = Column(Numeric(10, 2))
-    spectablecontent = Column(JSON)  # Changed from specTableContent to match DB column name
+    spectablecontent = Column(JSON)  

@@ -12,19 +12,18 @@ import vector_search
 import time
 from redis_cache import get_cache_statistics 
 
-# Configure logging
+
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with your frontend URL
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,12 +32,12 @@ app.add_middleware(
 import redis_cache
 redis_cache.setup_redis()  # Initialize Redis immediately
 
-# Initialize vector search on startup
+
 @app.on_event("startup")
 async def startup_event():
     vector_search.setup_collection()
 
-# Database setup
+
 
 @app.post("/products/", response_model=ProductModel)
 async def create_product(
@@ -54,7 +53,7 @@ async def create_product(
             title=product.title,
             description=product.description,
             price=product.price,
-            spectablecontent=product.specTableContent  # Changed to match the column name
+            spectablecontent=product.specTableContent  
         )
         db.add(db_product)
         db.commit()
@@ -93,11 +92,11 @@ async def search_products(
     db: Session = Depends(get_db)
 ):
     try:
-        # Return empty list for empty queries
+        
         if not query.strip():
             return []
         
-        # Create a PostgreSQL tsvector from all relevant text fields with different weights
+        # PostgreSQL tsvector from all relevant text fields with different weights
         # Weight A (4.0) for title and brand, Weight B (0.4) for description and category
         search_vector = func.to_tsvector('english', 
             func.concat_ws(' ', 
@@ -108,7 +107,7 @@ async def search_products(
             )
         )
         
-        # Create a tsquery from the search terms
+      
         search_query = func.plainto_tsquery('english', query)
         
         # Perform the search with ranking
@@ -178,32 +177,32 @@ async def integrated_search(
 ):
     """Integrated search using both PostgreSQL and vector search"""
     try:
-        # Return empty list for empty queries
+        
         if not query.strip():
             return []
         
-        # 1. Get similar product IDs from vector search
+        # Get similar product IDs from vector search
         similar_products = vector_search.get_similar_product_ids(query, limit, offset)
         
         if not similar_products:
             return []
         
-        # 2. Extract IDs
+        # Extract IDs
         product_ids = [item["id"] for item in similar_products]
         
-        # 3. Fetch complete product data from PostgreSQL
+        # Fetch complete product data from PostgreSQL
         products_map = {}
         products = db.query(Product).filter(Product.id.in_(product_ids)).all()
         for product in products:
             products_map[product.id] = product
         
-        # 4. Combine vector search scores with product data
-        # Maintain the order of results from vector search
+        # Combine vector search scores with product data
         results = []
         for item in similar_products:
             product_id = item["id"]
             if product_id in products_map:
                 product = products_map[product_id]
+                
                 # Skip products with missing or invalid title
                 if not product.title or not isinstance(product.title, str):
                     continue
@@ -247,18 +246,15 @@ async def test_redis_connection():
     """Test Redis connection and caching"""
     try:
         from redis_cache import redis_client
-        
-        # Ensure Redis is connected
+
         if not redis_client:
             return {"status": "error", "message": "Could not connect to Redis"}
             
-        # Try a simple Redis operation
         test_key = "test:connection"
         test_value = f"Connection test at {time.time()}"
         redis_client.set(test_key, test_value)
         read_back = redis_client.get(test_key)
         
-        # Check Redis info
         info = redis_client.info()
         
         return {

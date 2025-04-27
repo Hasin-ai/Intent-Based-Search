@@ -449,7 +449,7 @@
       <!-- Intent Based Search Section -->
       <section class="search-section">
         <div class="glass-highlight"></div>
-        <!-- <div class="feature-pill">AI Powered</div> -->
+        
         <div class="search-header">
           <h2>Intent Based Search</h2>
           <span class="result-count" id="intentCount">0</span>
@@ -545,7 +545,6 @@
       }, 300);
     });
 
-    // AI-Powered Search Implementation
     const aiSearch = document.getElementById('aiSearch');
     const aiResults = document.getElementById('aiResults');
     const intentCount = document.getElementById('intentCount');
@@ -564,7 +563,6 @@
         const response = await fetch(`http://localhost:8000/products/integrated-search/?query=${encodeURIComponent(query)}`);
         const results = await response.json();
         
-        // Update count
         intentCount.textContent = results.length;
         
         if (results.length) {
@@ -612,7 +610,6 @@
       }
     }
 
-    // Enter key support for AI search
     aiSearch.addEventListener('keypress', (e) => e.key === 'Enter' && performAISearch());
   </script>
 </body>

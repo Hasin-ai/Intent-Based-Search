@@ -4,7 +4,7 @@ import logging
 import json
 import time
 import os
-import traceback  # Import traceback for debugging
+import traceback  
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -60,9 +60,10 @@ def increment_query_frequency(query_hash):
         return
         
     try:
-        # Increment score in sorted set
+        # increment score in sorted set
         redis_client.zincrby(get_frequency_key(), 1, query_hash)
-        # Ensure frequency data expires after 1 hour
+       
+        # frequency data expires after 1 hour
         redis_client.expire(get_frequency_key(), 3600)
     except Exception as e:
         logger.warning(f"Failed to increment query frequency: {str(e)}")
@@ -71,10 +72,10 @@ def determine_ttl(query_hash):
     """Determine TTL based on query frequency"""
     if is_hot_query(query_hash):
         logger.info(f"Hot query detected - using 1 hour TTL")
-        return 3600  # 1 hour for hot queries (increased from 600s)
+        return 3600  # 1 hour for hot 
     else:
         logger.info(f"Cold query - using 5 minute TTL")
-        return 300   # 5 minutes for cold queries (increased from 60s)
+        return 300   # 5 minutes for cold 
 
 def cache_embedding(query, embedding, explicit_ttl=None):
     """Cache embedding with adaptive TTL"""
@@ -87,14 +88,14 @@ def cache_embedding(query, embedding, explicit_ttl=None):
         cache_key = get_cache_key(query)
         query_hash = cache_key.split(":")[-1]
         
-        # Use explicit TTL if provided, otherwise calculate it
+       
         ttl = explicit_ttl if explicit_ttl is not None else determine_ttl(query_hash)
         
-        # Convert embedding to JSON string
+        # embedding --> JSON 
         embedding_json = json.dumps(embedding)
         logger.info(f"Caching embedding with key: {cache_key}, size: {len(embedding_json)} bytes")
         
-        # Store in Redis with TTL
+        # store in redis with TTL
         redis_client.setex(
             cache_key, 
             ttl, 
@@ -166,16 +167,13 @@ def get_cache_statistics():
         if not redis_client:
             return {"status": "Redis not available"}
             
-        # Get hot queries
         freq_key = get_frequency_key()
         hot_queries = redis_client.zrange(
             freq_key, 0, -1, desc=True, withscores=True
         )
         
-        # Get memory info
         memory_info = redis_client.info("memory")
         
-        # Format results - remove .decode() since strings are already decoded
         hot_query_data = [
             {"query_hash": query, "score": score}
             for query, score in hot_queries if score >= 5

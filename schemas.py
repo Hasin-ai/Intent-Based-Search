@@ -5,7 +5,7 @@ class ProductBase(BaseModel):
     """Base class for Product schemas"""
     class Config:
         from_attributes = True
-        populate_by_name = True  # Allow both casing versions
+        populate_by_name = True 
 
 class ProductModel(ProductBase):
     """Schema for creating and displaying products"""
@@ -20,7 +20,7 @@ class ProductModel(ProductBase):
 class ProductResponse(ProductModel):
     """Schema for returning products with ID"""
     id: int
-    score: Optional[float] = None  # Optional score for search results
+    score: Optional[float] = None  
 
 class ProductUpdate(ProductBase):
     """Schema for updating products"""

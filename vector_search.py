@@ -1,15 +1,14 @@
 import os
 import logging
 import traceback
-import google.generativeai as genai
 import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from models import Product
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from google.genai import types
-from google import genai
+
+
 # Redis
 from redis_cache import (
     get_cached_embedding, cache_embedding,
@@ -22,20 +21,12 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    logger.error("GEMINI_API_KEY is not set in environment variables")
-    raise ValueError("GEMINI_API_KEY is required")
 
-# Gemini API setup
-try:
-    logger.info("Initializing Gemini API client")
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    logger.info("Gemini API client initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize Gemini API client: {str(e)}")
-    raise
+load_dotenv()   
+MODEL_PATH = os.getenv("MODEL_PATH")
+# print(f"MODEL_PATH: {MODEL_PATH}")
+if not MODEL_PATH:
+    raise ValueError("MODEL_PATH is not set in environment variables")
 
 # Initialize Qdrant client
 try:
@@ -46,30 +37,26 @@ except Exception as e:
     logger.error(f"Failed to initialize Qdrant client: {str(e)}")
     raise
 
-# Variable to store the embedding dimension once we discover it
-VECTOR_DIM = 384  # Lock this to 384 to match the local model output
+
+VECTOR_DIM = 384  
 
 def generate_embedding_from_transformers(text):
     """Generate embeddings using local transformer model"""
     try:
-        # Assuming the transformer model and tokenizer are globally available
-        # (This would require importing and setting up the model at the top of your script)
+        
         from transformers import AutoModel, AutoTokenizer
         import torch
         
-        # Load model and tokenizer from local path if not already loaded
-        model_path = "/home/fahim/Downloads/bge-fine-tuned-wdc-products-20250426T075427Z-001/bge-fine-tuned-wdc-products"
+        
+        model_path = MODEL_PATH
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModel.from_pretrained(model_path)
         
-        # Tokenize input text
         encoded_input = tokenizer([text], padding=True, truncation=True, return_tensors="pt")
-        
-        # Get model output
+
         with torch.no_grad():
             model_output = model(**encoded_input)
         
-        # Perform mean pooling
         token_embeddings = model_output.last_hidden_state
         attention_mask = encoded_input['attention_mask']
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
@@ -88,7 +75,7 @@ def generate_embedding_from_transformers(text):
                 # Truncate if longer than needed
                 embedding = embedding[:VECTOR_DIM]
             else:
-                # Pad with zeros if shorter than needed (unlikely in this case)
+                # Pad with zeros if shorter than needed 
                 embedding = embedding + [0.0] * (VECTOR_DIM - len(embedding))
         
         logger.info(f"Successfully generated local embedding with {len(embedding)} dimensions")
@@ -102,57 +89,55 @@ def generate_embedding_from_transformers(text):
 def generate_embedding(text):
     """Generate embeddings with Redis caching using local transformer model"""
     global VECTOR_DIM
-    # Ensure VECTOR_DIM is always 384
     VECTOR_DIM = 384
     
     try:
-        # Check cache if Redis is available
+        
         cached_embedding = get_cached_embedding(text)
         if cached_embedding:
-            # Verify dimensions of cached embedding
+           
             if len(cached_embedding) != VECTOR_DIM:
                 logger.warning(f"Cached embedding has incorrect dimension: {len(cached_embedding)}, expected {VECTOR_DIM}")
-                # Force to correct dimension
+                
+              
                 if len(cached_embedding) > VECTOR_DIM:
                     cached_embedding = cached_embedding[:VECTOR_DIM]
                 else:
                     cached_embedding = cached_embedding + [0.0] * (VECTOR_DIM - len(cached_embedding))
             return cached_embedding
-        
-        # Generate new embedding using local transformer model
+
         logger.info(f"Generating embedding for: '{text[:30]}...'")
         
-        # Use local transformer model instead of Gemini API
         embedding = generate_embedding_from_transformers(text)
 
-        # Update the global VECTOR_DIM if not yet set
+        
         if VECTOR_DIM is None:
             VECTOR_DIM = len(embedding)
             logger.info(f"Discovered embedding dimension: {VECTOR_DIM}")
 
-        # Ensure the dimension matches our expected dimension
+        
         if len(embedding) != VECTOR_DIM:
             logger.warning(f"Embedding dimension mismatch: got {len(embedding)}, expected {VECTOR_DIM}")
         
-        # Cache the newly generated embedding
+        
         if get_redis_client():
             redis_client = get_redis_client()
             logger.info("Caching embedding in Redis")
             query_hash = get_cache_key(text).split(":")[-1]
             logger.info(f"Caching embedding for query hash: {query_hash}")
             
-            # Get the current frequency FIRST, then increment it
+            
             current_freq = redis_client.zscore(get_frequency_key(), query_hash) or 0
             new_freq = current_freq + 1
             
-            # Explicitly increment to the new frequency
+            
             redis_client.zadd(get_frequency_key(), {query_hash: new_freq})
             redis_client.expire(get_frequency_key(), 3600)  # Set expiry
             
-            # Determine TTL based on the NEW frequency we just set
+            
             ttl = 3600 if new_freq >= 5 else 300
             
-            # Cache with the correct TTL
+            
             cache_embedding(text, embedding, ttl)  # Pass TTL directly
             logger.info(f"Cached embedding with TTL {ttl}s")
         else:
@@ -164,17 +149,16 @@ def generate_embedding(text):
         logger.error(f"Error generating embedding: {str(e)}")
         logger.error(traceback.format_exc())
 
-        # Fall back to mock embedding if API fails
+        # Fall back to mock embedding
         logger.info("Falling back to mock embedding")
         return generate_mock_embedding(text)
 
 def generate_mock_embedding(text):
     """Fallback function to generate mock embeddings if API fails"""
     try:
-        # If VECTOR_DIM is not set yet, use a default size
         global VECTOR_DIM
         if VECTOR_DIM is None:
-            VECTOR_DIM = 384  # Updated default based on local model
+            VECTOR_DIM = 384  
             logger.info(f"Using default embedding dimension: {VECTOR_DIM}")
         
         text_hash = hash(text) % 10000
@@ -190,13 +174,14 @@ def generate_mock_embedding(text):
 def setup_collection():
     """Set up Qdrant collection with the correct dimensions"""
     global VECTOR_DIM
-    # Always enforce 384 dimensions
-    VECTOR_DIM = 384
+    
+    if VECTOR_DIM is None:
+        logger.info("VECTOR_DIM is None")
+        VECTOR_DIM = 384
     
     try:
         logger.info("Setting up Qdrant collection")
         
-        # If collection exists, check if dimensions match
         if qdrant.collection_exists("products"):
             logger.info("Collection 'products' exists, checking dimensions")
             try:
@@ -232,7 +217,7 @@ def index_product(product):
     try:
         logger.info(f"Indexing product ID: {product.id}")
         
-        # Generate embedding using all relevant fields
+        # embedding using all relevant fields
         content = f"{product.category or ''} {product.brand or ''} {product.title or ''} {product.description or ''} {str(product.price) if product.price else ''}"
         embedding = generate_embedding(content)
         
