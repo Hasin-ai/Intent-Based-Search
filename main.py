@@ -11,6 +11,7 @@ from schemas import ProductModel, ProductResponse, ProductUpdate
 import vector_search
 import time
 from redis_cache import get_cache_statistics 
+from create_tables import create_tables_if_not_exist
 
 
 logging.basicConfig(level=logging.INFO, 
@@ -35,6 +36,10 @@ redis_cache.setup_redis()  # Initialize Redis immediately
 
 @app.on_event("startup")
 async def startup_event():
+    # Create tables if they don't exist
+    create_tables_if_not_exist()
+    
+    # Set up vector search collection
     vector_search.setup_collection()
 
 

@@ -55,3 +55,4 @@ gemini.py
 log.txt
 .env
 .ipynb_checkpoints/
+show_stats.html
